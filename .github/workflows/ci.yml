@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  smoke:
+    name: CPU smoke test (128 px, 2 steps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache model weights
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/clip
+            ~/.pytorch_pretrained_biggan
+          key: weights-biggan-deep-128-clip-vit-b-32-v1
+      - name: Install (CPU-only torch)
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -e . pytest pyflakes
+      - name: Lint
+        run: python -m pyflakes big_sleep/big_sleep.py big_sleep/cli.py big_sleep/device.py test scripts
+      - name: Smoke test
+        env:
+          BIG_SLEEP_DEVICE: cpu
+        run: python -m pytest -x -q test
