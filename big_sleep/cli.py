@@ -1,41 +1,27 @@
 import fire
 import random as rnd
-import sys
 import os
 import platform
 import torch
-from big_sleep import Imagine, version
-from pathlib import Path
-from .version import __version__;
+from big_sleep import Imagine
+from big_sleep.device import DEVICE, describe
+from .version import __version__
+
+# lucidrains' schedule was tuned for a V100 doing ~4 it/s. On an M1 Max a
+# 512 px / 96-cutout step is ~1 s, so the defaults below finish in minutes;
+# --upstream_defaults restores the originals.
+UPSTREAM_EPOCHS, UPSTREAM_ITERATIONS, UPSTREAM_CUTOUTS = 20, 1050, 128
 
 def check_environment():
-    """Check if the environment is properly set up for big-sleep"""
+    """Print which device big-sleep will run on."""
     print("╔══════════════════════════════════════════════════════╗")
     print("║                Big Sleep Environment                  ║")
     print("╚══════════════════════════════════════════════════════╝")
-    
-    # Check if PyTorch is installed
-    if not hasattr(torch, '__version__'):
-        print("❌ ERROR: PyTorch is not properly installed.")
-        print("   Please install PyTorch with: pip install torch torchvision")
-        sys.exit(1)
-    
-    # Check for Apple Silicon specific requirements
-    is_apple_silicon = platform.processor() == 'arm' and platform.system() == 'Darwin'
-    if is_apple_silicon:
-        if not torch.backends.mps.is_available():
-            print("⚠️  Running on Apple Silicon, but MPS is not available.")
-            print("   Performance will be significantly slower on CPU.")
-            print("   Make sure you have PyTorch 2.0+ installed: pip install 'torch>=2.0.0' 'torchvision>=0.15.0'")
-        else:
-            print(f"✅ Using Apple MPS (Metal Performance Shaders) for accelerated processing")
-            print(f"   Hardware: {platform.processor()} - {platform.machine()}")
-    elif torch.cuda.is_available():
-        print(f"✅ Using CUDA with {torch.cuda.get_device_name(0)}")
-        print(f"   CUDA version: {torch.version.cuda}")
-    else:
-        print("⚠️  No GPU detected. Running on CPU will be very slow.")
-    
+    icon = "✅" if DEVICE.type in ("mps", "cuda") else "⚠️ "
+    print(f"{icon} Device: {describe()}")
+    if DEVICE.type == "cpu" and platform.system() == "Darwin" and platform.machine() == "arm64":
+        print("   This is an Apple Silicon Mac but MPS is unavailable — check that this")
+        print("   Python is arm64 (not Rosetta) and that torch>=2.0 is installed.")
     print(f"• PyTorch version: {torch.__version__}")
     print(f"• Python version: {platform.python_version()}")
     print("────────────────────────────────────────────────────────")
@@ -48,8 +34,8 @@ def train(
     lr = .07,
     image_size = 512,
     gradient_accumulate_every = 1,
-    epochs = 20,
-    iterations = 1050,
+    epochs = 1,
+    iterations = 500,
     save_every = 50,
     overwrite = False,
     save_progress = False,
@@ -65,12 +51,13 @@ def train(
     save_best = True,  # Changed to True to save best result by default
     experimental_resample = False,
     ema_decay = 0.5,
-    num_cutouts = 96,  # Reduced from 128 for better performance
+    num_cutouts = 96,
     center_bias = False,  # Matching original default
     larger_model = False,
     output_dir = None,
-    fast = False,  # New parameter for quickly generating images
-    debug = False   # New parameter to enable debug output
+    fast = False,  # 1 x 200 steps, 64 cutouts: a preview in a couple of minutes
+    upstream_defaults = False,  # lucidrains' 20 x 1050 x 128-cutout schedule
+    debug = False
 ):
     print(f'Starting up... v{__version__}')
 
@@ -83,12 +70,14 @@ def train(
         os.makedirs(output_dir, exist_ok=True)
         print(f"Images will be saved to: {os.path.abspath(output_dir)}")
 
-    # Apply fast mode settings if enabled
+    if fast and upstream_defaults:
+        raise SystemExit("--fast and --upstream_defaults are mutually exclusive")
     if fast:
-        epochs = 5
-        iterations = 500
-        num_cutouts = 64
-        print("⚡ Fast mode enabled - using reduced settings for quicker generation")
+        epochs, iterations, num_cutouts = 1, 200, 64
+        print("⚡ Fast mode - 1 x 200 iterations, 64 cutouts")
+    if upstream_defaults:
+        epochs, iterations, num_cutouts = UPSTREAM_EPOCHS, UPSTREAM_ITERATIONS, UPSTREAM_CUTOUTS
+        print(f"Using upstream schedule - {epochs} x {iterations} iterations, {num_cutouts} cutouts")
         
     # Set the debug flag in the big_sleep module
     import big_sleep.big_sleep
@@ -139,8 +128,7 @@ def train(
     abs_path = os.path.abspath(str(imagine.filename))
     print(f"Image saved to: {abs_path}")
     print("────────────────────────────────────────────────────────")
-    
-    # Output directory is now handled by the Imagine class
+
 
 def main():
     check_environment()
