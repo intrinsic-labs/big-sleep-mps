@@ -1,4 +1,9 @@
-"""Priors on the trainable BigGAN latents."""
+"""Rejected vectorized prior: tiny MPS gradient drift changes seeded images.
+
+Forward/backward was 3.119 -> 0.709 ms on M1 Max, but even a 1.12e-8 gradient
+difference changed the seed-0 composition over 200 steps. Kept for research;
+BigSleep intentionally retains the original per-row computation.
+"""
 import torch
 
 
