@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from big_sleep.mps_kernels import layer_norm, quick_gelu
+from big_sleep.reference_math import REFERENCE_MATH
 from pathlib import Path
 
 import hashlib
@@ -340,7 +341,7 @@ class ModifiedResNet(nn.Module):
 
 # A/B switches for tests/benchmarks; BIG_SLEEP_REFERENCE_MATH=1 restores the upstream
 # forms (bit-for-bit reproduction of pre-optimisation runs). See biggan.py for the same switch.
-_REFERENCE = os.environ.get('BIG_SLEEP_REFERENCE_MATH', '') not in ('', '0')
+_REFERENCE = REFERENCE_MATH
 PATCH_EMBED_AS_MATMUL = not _REFERENCE
 FUSED_QUICK_GELU = not _REFERENCE
 FUSED_LAYER_NORM = not _REFERENCE

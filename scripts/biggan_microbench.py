@@ -20,7 +20,7 @@ def bench(label, fn, n=5, warm=2):
     print(f"{label:62s} {ms:9.1f} ms"); return ms
 
 
-from big_sleep.biggan import BigGAN, BigGANBatchNorm, SelfAttn, GenBlock
+from big_sleep.biggan import BigGAN, BigGANBatchNorm
 from big_sleep.big_sleep import Latents
 
 gan = BigGAN.from_pretrained(f"biggan-deep-{size}").to(dev).eval().requires_grad_(False)

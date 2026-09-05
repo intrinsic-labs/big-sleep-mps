@@ -57,6 +57,7 @@ def train(
     output_dir = None,
     fast = False,  # 1 x 200 steps, 64 cutouts: a preview in a couple of minutes
     upstream_defaults = False,  # lucidrains' 20 x 1050 x 128-cutout schedule
+    metal_cutouts = None,  # MPS: one Metal kernel for all cutouts; corrects torch's nearest-resize gradients, so images differ for a seed (default: $BIG_SLEEP_METAL_CUTOUTS)
     debug = False
 ):
     print(f'Starting up... v{__version__}')
@@ -111,7 +112,8 @@ def train(
         num_cutouts = num_cutouts,
         center_bias = center_bias,
         larger_clip = larger_model,
-        output_dir = output_dir
+        output_dir = output_dir,
+        metal_cutouts = metal_cutouts
     )
 
     if not overwrite and imagine.filename.exists():

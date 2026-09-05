@@ -3,12 +3,12 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from scripts.cutout_metal import metal_cutouts
+from big_sleep.mps_cutouts import metal_cutouts
 
 
 @pytest.mark.skipif(not torch.backends.mps.is_available()
                     or not hasattr(torch.mps, "compile_shader"),
-                    reason="Experimental cutouts require MPS and compile_shader")
+                    reason="Metal cutouts require MPS and compile_shader")
 @pytest.mark.parametrize("width", [128, 256, 512])
 def test_all_default_sizes_match_source_indices_and_gradient_counts(width):
     # Integer-valued fp32 pixels make both forward identities and the derivative

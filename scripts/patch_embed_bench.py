@@ -2,7 +2,7 @@
 
     PYTHONPATH=$PWD python scripts/patch_embed_bench.py 96
 """
-import sys, time, torch, torch.nn.functional as F
+import sys, time, torch
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 96
 dev = "mps"

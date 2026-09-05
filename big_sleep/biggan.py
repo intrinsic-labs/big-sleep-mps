@@ -4,6 +4,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from big_sleep.reference_math import REFERENCE_MATH
 import math
 import json
 import copy
@@ -380,7 +381,7 @@ class SelfAttn(nn.Module):
 # flips every rounding-changing optimisation in the fork back to the upstream form, which
 # reproduces pre-optimisation runs bit for bit (see docs/perf-notes-fable.md on why any
 # change of rounding gives a different image for the same seed).
-_REFERENCE = os.environ.get('BIG_SLEEP_REFERENCE_MATH', '') not in ('', '0')
+_REFERENCE = REFERENCE_MATH
 FUSED_CONDITIONAL_BN = not _REFERENCE
 SLICE_CONV_TO_RGB = not _REFERENCE
 BAKE_SPECTRAL_NORM = True  # bit-identical when baked on the compute device (from_pretrained does), so always on

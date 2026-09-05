@@ -3,8 +3,9 @@
 Run: python scripts/bench_cutouts.py 512 96 --n 30
 Reports a CPU-gradient oracle and synchronized forward/backward means. The
 resampled measurement includes geometry construction and host-to-device copies.
-Metal is an experiment, not a runtime option: its corrected gradients change
-the current MPS optimization trajectory. Requires torch.mps.compile_shader.
+The Metal kernel is the opt-in runtime path (BIG_SLEEP_METAL_CUTOUTS=1 /
+--metal_cutouts): its corrected gradients change the MPS optimization trajectory
+for a seed. Requires torch.mps.compile_shader.
 """
 import argparse
 import random
@@ -13,7 +14,11 @@ import time
 import torch
 import torch.nn.functional as F
 
-from cutout_metal import metal_cutouts
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from big_sleep.mps_cutouts import metal_cutouts  # noqa: E402
 
 
 def sample_boxes(width, count):

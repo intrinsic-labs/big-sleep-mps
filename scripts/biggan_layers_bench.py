@@ -21,7 +21,7 @@ def bench(label, fn, n=5, warm=2, quiet=False):
     return ms
 
 
-from big_sleep.biggan import BigGAN, BigGANBatchNorm, GenBlock, SelfAttn
+from big_sleep.biggan import BigGAN, BigGANBatchNorm, GenBlock
 from big_sleep.big_sleep import Latents
 
 gan = BigGAN.from_pretrained(f"biggan-deep-{size}").to(dev).eval().requires_grad_(False)
@@ -53,7 +53,7 @@ hs = [m.register_forward_pre_hook(lambda m, i, m_=m: inputs.__setitem__(m_, i[0]
 with torch.no_grad(): gan.generator(cond, 1)
 for h in hs: h.remove()
 
-print(f"\n== per layer, fwd / fwd+bwd(input+cond) ==")
+print("\n== per layer, fwd / fwd+bwd(input+cond) ==")
 tot_f = tot_fb = 0
 idx = 1
 for i, layer in enumerate(gan.generator.layers):

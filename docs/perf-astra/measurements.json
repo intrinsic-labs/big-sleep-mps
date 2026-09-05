@@ -1,0 +1,112 @@
+{
+  "environment": {
+    "hardware": "Apple M1 Max",
+    "memory_bytes": 34359738368,
+    "macos": "26.5.2 (25F84)",
+    "python": "3.12.13",
+    "torch": "2.14.0",
+    "torch_git": "08187d9e0fba026dc8217405802ab5381dc88d90"
+  },
+  "step_ms": {
+    "baseline": {
+      "512/96": 1008,
+      "512/64": 720,
+      "128/8": 121
+    },
+    "normalization_only": {
+      "512/96": 997,
+      "512/64": 717,
+      "128/8": 119
+    },
+    "rejected_normalization_and_moments": {
+      "512/96": 1000,
+      "512/64": 714,
+      "128/8": 118
+    },
+    "experimental_metal": {
+      "512/96": 992,
+      "512/64": 712,
+      "128/8": 120
+    }
+  },
+  "timed_steps": 20,
+  "warmup_steps": 1,
+  "fast_wall_seconds": {
+    "baseline": 153.42857420799555,
+    "normalization_only": 152.9045714159729,
+    "rejected_normalization_and_moments": 152.33943945803912
+  },
+  "normalization_quality": {
+    "final": {
+      "pixels_exact": true,
+      "files_exact": true,
+      "mean_absolute_error": 0.0,
+      "baseline_sha256": "f6541fc0082c185b93ba35eefdc28eef6ba1cc9e9f659f59308174593c44c15b",
+      "retained_sha256": "f6541fc0082c185b93ba35eefdc28eef6ba1cc9e9f659f59308174593c44c15b"
+    },
+    ".best": {
+      "pixels_exact": true,
+      "files_exact": true,
+      "mean_absolute_error": 0.0,
+      "baseline_sha256": "f6541fc0082c185b93ba35eefdc28eef6ba1cc9e9f659f59308174593c44c15b",
+      "retained_sha256": "f6541fc0082c185b93ba35eefdc28eef6ba1cc9e9f659f59308174593c44c15b"
+    }
+  },
+  "retained_phase_means_ms": {
+    "generator start -> generator end": 72.22083755768836,
+    "generator end -> CLIP start": 7.723873050417751,
+    "CLIP start -> CLIP end": 206.89407895260956,
+    "CLIP end -> backward start": 5.016449993127026,
+    "backward start -> loss backward end": 8.378679197630845,
+    "loss backward end -> CLIP backward end": 634.0820603567408,
+    "CLIP backward end -> cutouts backward end": 53.80449375079479,
+    "cutouts backward end -> backward end": 73.86962709424552,
+    "backward end -> Adam end": 1.1381334101315588,
+    "Adam end -> EMA end": 0.5171539960429072,
+    "EMA end -> zero grad end": 0.04312089877203107
+  },
+  "micro_ms": {
+    "regularizer reference": 3.118697910103947,
+    "regularizer vectorized": 0.7088437495986,
+    "loss drift": 0.0,
+    "grad drift": [
+      1.1175870895385742e-08,
+      0.0
+    ],
+    "normalize 8 torchvision": 1.2834069338471938,
+    "normalize 8 cached": 0.4683166664714615,
+    "normalize 8 drift": 0.0,
+    "normalize 96 torchvision": 8.070015299987668,
+    "normalize 96 cached": 4.967472234663243,
+    "normalize 96 drift": 0.0,
+    "adam foreach False": 0.2134849998401478,
+    "adam foreach True": 0.2052658295724541,
+    "EMA update": 0.0904954195721075
+  },
+  "cutout_forward_backward_ms": {
+    "512/96": {
+      "fixed": {
+        "torch": 10.257,
+        "indexed": 3.568,
+        "metal": 1.065
+      },
+      "resampled": {
+        "torch": 19.08,
+        "indexed": 19.231,
+        "metal": 1.971
+      }
+    },
+    "128/8": {
+      "fixed": {
+        "torch": 0.647,
+        "indexed": 0.68,
+        "metal": 0.24
+      },
+      "resampled": {
+        "torch": 3.694,
+        "indexed": 2.247,
+        "metal": 0.702
+      }
+    }
+  }
+}
