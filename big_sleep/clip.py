@@ -10,11 +10,9 @@ import hashlib
 import os
 import urllib
 import warnings
-from typing import Union, List
+from typing import List
 
-import torch
-from PIL import Image
-from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize
+from torchvision.transforms import Compose, Normalize
 from tqdm import tqdm
 
 _MODELS = {
@@ -93,15 +91,8 @@ def load(name: str, device: Union[str, torch.device] = None, jit=True):
     """
     # Determine appropriate device if not specified
     if device is None:
-        import platform
-        is_apple_silicon = platform.processor() == 'arm' and platform.system() == 'Darwin'
-        
-        if is_apple_silicon and torch.backends.mps.is_available():
-            device = "mps"
-        elif torch.cuda.is_available():
-            device = "cuda"
-        else:
-            device = "cpu"
+        from big_sleep.device import DEVICE
+        device = DEVICE.type
     if name in _MODELS:
         model_path = _download(_MODELS[name])
     elif os.path.isfile(name):
@@ -413,6 +404,13 @@ class VisualTransformer(nn.Module):
 
     def forward(self, x: torch.Tensor):
         x = self.conv1(x)  # shape = [*, width, grid, grid]
+        if x.requires_grad and x.device.type == 'mps':
+            # The torch.cat below hands conv1's backward a narrow() of the
+            # incoming grad: a permuted view with a storage offset. On that one
+            # layout mps_convolution_backward is ~200x slower (11 s vs 56 ms at
+            # batch 8, torch 2.14). Making the grad contiguous is numerically a
+            # no-op; CUDA/CPU never take this branch. See docs/pytorch-issue-draft.md.
+            x.register_hook(lambda g: g.contiguous())
         x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
         x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
         x = torch.cat([self.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x], dim=1)  # shape = [*, grid ** 2 + 1, width]
@@ -626,9 +624,7 @@ def build_model(state_dict: dict):
     model.load_state_dict(state_dict)
     return model.eval()
 
-import gzip
 import html
-import os
 from functools import lru_cache
 
 import ftfy
