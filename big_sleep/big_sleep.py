@@ -42,11 +42,7 @@ from big_sleep.resample import resample
 from big_sleep.biggan import BigGAN
 from big_sleep.clip import load, tokenize
 from big_sleep.device import DEVICE
-<<<<<<< HEAD
-=======
-from big_sleep.regularizers import latent_loss
 from big_sleep.normalization import normalize_clip_image
->>>>>>> 81e4c27 (Cache fixed CLIP normalization tensors and remove its scalar sync)
 
 # graceful keyboard interrupt
 
