@@ -336,6 +336,10 @@ class ModifiedResNet(nn.Module):
         return x
 
 
+# A/B switch for tests/benchmarks; see VisualTransformer.patch_embed.
+PATCH_EMBED_AS_MATMUL = True
+
+
 class LayerNorm(nn.LayerNorm):
     """Subclass torch's LayerNorm to handle fp16."""
 
@@ -420,10 +424,16 @@ class VisualTransformer(nn.Module):
         return patches @ self.conv1.weight.reshape(self.conv1.out_channels, -1).t()
 
     def forward(self, x: torch.Tensor):
-        if x.device.type == 'mps' and self.conv1.kernel_size == self.conv1.stride and self.conv1.bias is None:
+        if PATCH_EMBED_AS_MATMUL and x.device.type == 'mps' and self.conv1.kernel_size == self.conv1.stride and self.conv1.bias is None:
             x = self.patch_embed(x)  # shape = [*, grid ** 2, width]
         else:
             x = self.conv1(x)  # shape = [*, width, grid, grid]
+            if x.requires_grad and x.device.type == 'mps':
+                # The torch.cat below hands conv1's backward a narrow() of the
+                # incoming grad: a permuted view with a storage offset, on which
+                # mps_convolution_backward is ~200x slower (11 s vs 56 ms at batch 8,
+                # torch 2.14). Numerically a no-op. See docs/pytorch-issue-draft.md.
+                x.register_hook(lambda g: g.contiguous())
             x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
             x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
         x = torch.cat([self.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x], dim=1)  # shape = [*, grid ** 2 + 1, width]
