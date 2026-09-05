@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from big_sleep.mps_kernels import quick_gelu
+from big_sleep.mps_kernels import layer_norm, quick_gelu
 from pathlib import Path
 
 import hashlib
@@ -338,15 +338,22 @@ class ModifiedResNet(nn.Module):
         return x
 
 
-# A/B switch for tests/benchmarks; see VisualTransformer.patch_embed.
-PATCH_EMBED_AS_MATMUL = True
-FUSED_QUICK_GELU = True
+# A/B switches for tests/benchmarks; BIG_SLEEP_REFERENCE_MATH=1 restores the upstream
+# forms (bit-for-bit reproduction of pre-optimisation runs). See biggan.py for the same switch.
+_REFERENCE = os.environ.get('BIG_SLEEP_REFERENCE_MATH', '') not in ('', '0')
+PATCH_EMBED_AS_MATMUL = not _REFERENCE
+FUSED_QUICK_GELU = not _REFERENCE
+FUSED_LAYER_NORM = not _REFERENCE
 
 
 class LayerNorm(nn.LayerNorm):
     """Subclass torch's LayerNorm to handle fp16."""
 
     def forward(self, x: torch.Tensor):
+        if FUSED_LAYER_NORM:
+            # fp16 in/out with fp32 statistics in one Metal kernel each way on MPS
+            # (frozen weights only); elsewhere the same upcast as below.
+            return layer_norm(x, self.weight, self.bias, self.eps)
         orig_type = x.dtype
         ret = super().forward(x.type(torch.float32))
         return ret.type(orig_type)

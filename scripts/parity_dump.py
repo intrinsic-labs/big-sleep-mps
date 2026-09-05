@@ -9,6 +9,9 @@ flags = set(sys.argv[5:]); sys.argv = sys.argv[:1]
 import big_sleep.clip as clip_mod, big_sleep.biggan as biggan_mod
 if "--no-patch-embed" in flags: clip_mod.PATCH_EMBED_AS_MATMUL = False
 if "--no-fused-bn" in flags: biggan_mod.FUSED_CONDITIONAL_BN = False
+if "--no-gelu" in flags: clip_mod.FUSED_QUICK_GELU = False
+if "--no-rgb-slice" in flags: biggan_mod.SLICE_CONV_TO_RGB = False
+if "--no-ln" in flags: clip_mod.FUSED_LAYER_NORM = False
 if "--no-bake" in flags: biggan_mod.BigGAN.freeze_for_inference = lambda self: self
 from big_sleep.big_sleep import Imagine
 im = Imagine(text="a pyramid made of ice", image_size=size, num_cutouts=cutouts, epochs=1,

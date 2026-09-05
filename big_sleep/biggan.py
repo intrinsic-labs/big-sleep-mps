@@ -376,8 +376,14 @@ class SelfAttn(nn.Module):
         out = x + self.gamma*attn_g
         return out
 
-# A/B switch for tests/benchmarks (reference form when False).
-FUSED_CONDITIONAL_BN = True
+# A/B switches for tests/benchmarks (reference forms when False). BIG_SLEEP_REFERENCE_MATH=1
+# flips every rounding-changing optimisation in the fork back to the upstream form, which
+# reproduces pre-optimisation runs bit for bit (see docs/perf-notes-fable.md on why any
+# change of rounding gives a different image for the same seed).
+_REFERENCE = os.environ.get('BIG_SLEEP_REFERENCE_MATH', '') not in ('', '0')
+FUSED_CONDITIONAL_BN = not _REFERENCE
+SLICE_CONV_TO_RGB = not _REFERENCE
+BAKE_SPECTRAL_NORM = not _REFERENCE  # forward-bit-identical, but see perf notes: the backward is not
 
 
 class BigGANBatchNorm(nn.Module):
@@ -591,12 +597,13 @@ class BigGAN(nn.Module):
           and keeps three (`z[:, :3]`). Slice the conv to those three: 128 -> 3 channels at
           512 px is ~75 GFLOP less per forward and the same again in backward; bit-identical.
         """
-        for module in list(self.modules()):
-            for hook in list(module._forward_pre_hooks.values()):
-                if type(hook).__name__ == 'SpectralNorm':
-                    nn.utils.remove_spectral_norm(module, name=hook.name)
+        if BAKE_SPECTRAL_NORM:
+            for module in list(self.modules()):
+                for hook in list(module._forward_pre_hooks.values()):
+                    if type(hook).__name__ == 'SpectralNorm':
+                        nn.utils.remove_spectral_norm(module, name=hook.name)
         rgb = self.generator.conv_to_rgb
-        if rgb.out_channels > 3:
+        if SLICE_CONV_TO_RGB and rgb.out_channels > 3:
             # Slice in place rather than building a new Conv2d: a fresh module's init
             # would consume the CPU RNG before Big Sleep draws its seeded latents.
             rgb.weight = nn.Parameter(rgb.weight[:3].clone(), requires_grad=False)
