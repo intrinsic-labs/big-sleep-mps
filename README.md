@@ -66,6 +66,10 @@ Details and the isolated kernel timings are in
 [`scripts/mps_conv_backward_repro.py`](scripts/mps_conv_backward_repro.py), and
 `scripts/bench_step.py` times a step on your own machine.
 
+A subsequent [pipeline performance pass](docs/perf-notes-astra.md) covers
+bit-exact normalization, rejected optimizations that changed seeded images,
+and a standalone Metal cutout experiment with an MPS resize-gradient reproducer.
+
 ## What this fork changes
 
 - Device selection (MPS / CUDA / CPU) in one place, `big_sleep/device.py`.
