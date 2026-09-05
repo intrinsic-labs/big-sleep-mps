@@ -4,6 +4,8 @@ from typing import Tuple, Union
 import torch
 import torch.nn.functional as F
 from torch import nn
+
+from big_sleep.mps_kernels import quick_gelu
 from pathlib import Path
 
 import hashlib
@@ -338,6 +340,7 @@ class ModifiedResNet(nn.Module):
 
 # A/B switch for tests/benchmarks; see VisualTransformer.patch_embed.
 PATCH_EMBED_AS_MATMUL = True
+FUSED_QUICK_GELU = True
 
 
 class LayerNorm(nn.LayerNorm):
@@ -351,6 +354,8 @@ class LayerNorm(nn.LayerNorm):
 
 class QuickGELU(nn.Module):
     def forward(self, x: torch.Tensor):
+        if FUSED_QUICK_GELU:
+            return quick_gelu(x)  # fused Metal fwd/bwd kernels on MPS, same math elsewhere
         return x * torch.sigmoid(1.702 * x)
 
 
