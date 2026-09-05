@@ -376,6 +376,16 @@ class SelfAttn(nn.Module):
         out = x + self.gamma*attn_g
         return out
 
+# A/B switches for tests/benchmarks (reference forms when False). BIG_SLEEP_REFERENCE_MATH=1
+# flips every rounding-changing optimisation in the fork back to the upstream form, which
+# reproduces pre-optimisation runs bit for bit (see docs/perf-notes-fable.md on why any
+# change of rounding gives a different image for the same seed).
+_REFERENCE = os.environ.get('BIG_SLEEP_REFERENCE_MATH', '') not in ('', '0')
+FUSED_CONDITIONAL_BN = not _REFERENCE
+SLICE_CONV_TO_RGB = not _REFERENCE
+BAKE_SPECTRAL_NORM = True  # bit-identical when baked on the compute device (from_pretrained does), so always on
+
+
 class BigGANBatchNorm(nn.Module):
     """ This is a batch norm module that can handle conditional input and can be provided with pre-computed
         activation means and variances for various truncation parameters.
@@ -413,14 +423,22 @@ class BigGANBatchNorm(nn.Module):
             running_mean = self.running_means[start_idx]
             running_var = self.running_vars[start_idx]
 
-        if self.conditional:
+        if self.conditional and not FUSED_CONDITIONAL_BN:
             running_mean = running_mean.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
             running_var = running_var.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
-
             weight = 1 + self.scale(condition_vector).unsqueeze(-1).unsqueeze(-1)
             bias = self.offset(condition_vector).unsqueeze(-1).unsqueeze(-1)
-
             out = (x - running_mean) / torch.sqrt(running_var + self.eps) * weight + bias
+        elif self.conditional:
+            # (x - mean) / sqrt(var + eps) * weight + bias, folded into one
+            # per-channel affine x * a + b: the five full-size elementwise passes
+            # over the activation become one addcmul. Same math (max |diff| 3e-4
+            # on the [-1, 1] image, well under one 8-bit quantum); on MPS this is
+            # ~24 ms of a 512 px forward, since the late blocks are memory-bound.
+            inv_std = torch.rsqrt(running_var + self.eps)                      # [C]
+            a = (1 + self.scale(condition_vector)) * inv_std                    # [1, C]
+            b = self.offset(condition_vector) - running_mean * a                # [1, C]
+            out = torch.addcmul(b[:, :, None, None], x, a[:, :, None, None])
         else:
             out = F.batch_norm(x, running_mean, running_var, self.weight, self.bias,
                                training=False, momentum=0.0, eps=self.eps)
@@ -534,7 +552,7 @@ class BigGAN(nn.Module):
     """BigGAN Generator."""
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, cache_dir=None, *inputs, **kwargs):
+    def from_pretrained(cls, pretrained_model_name_or_path, cache_dir=None, *inputs, freeze=True, **kwargs):
         if pretrained_model_name_or_path in PRETRAINED_MODEL_ARCHIVE_MAP:
             model_file = PRETRAINED_MODEL_ARCHIVE_MAP[pretrained_model_name_or_path]
             config_file = PRETRAINED_CONFIG_ARCHIVE_MAP[pretrained_model_name_or_path]
@@ -563,7 +581,40 @@ class BigGAN(nn.Module):
         from big_sleep.device import DEVICE
         state_dict = torch.load(resolved_model_file, map_location=DEVICE)
         model.load_state_dict(state_dict, strict=False)
+        if freeze:
+            # Bake on the compute device: spectral norm's weight_orig / sigma rounds
+            # differently on CPU and MPS, and the live parametrisation computes it on
+            # the device every forward. Baking there keeps the weights bit-identical.
+            model.to(DEVICE).freeze_for_inference()
         return model
+
+    @torch.no_grad()
+    def freeze_for_inference(self):
+        """Bake the frozen generator for inference-only use (Big Sleep never trains it).
+
+        - Spectral norm: `nn.utils.spectral_norm` recomputes weight = weight_orig / sigma
+          (an mv + dot + full weight copy) on *every* forward, eval mode included. With
+          the weights frozen, sigma never changes, so bake it once: 174 modules, bit-identical
+          output.
+        - conv_to_rgb: the generator computes all 128 output channels of the final 3x3 conv
+          and keeps three (`z[:, :3]`). Slice the conv to those three: 128 -> 3 channels at
+          512 px is ~75 GFLOP less per forward and the same again in backward; bit-identical.
+        """
+        if BAKE_SPECTRAL_NORM:
+            for module in list(self.modules()):
+                for hook in list(module._forward_pre_hooks.values()):
+                    if type(hook).__name__ == 'SpectralNorm':
+                        nn.utils.remove_spectral_norm(module, name=hook.name)
+        rgb = self.generator.conv_to_rgb
+        if SLICE_CONV_TO_RGB and rgb.out_channels > 3:
+            # Slice in place rather than building a new Conv2d: a fresh module's init
+            # would consume the CPU RNG before Big Sleep draws its seeded latents.
+            rgb.weight = nn.Parameter(rgb.weight[:3].clone(), requires_grad=False)
+            if rgb.bias is not None:
+                rgb.bias = nn.Parameter(rgb.bias[:3].clone(), requires_grad=False)
+            rgb.out_channels = 3
+        self.eval().requires_grad_(False)
+        return self
 
     def __init__(self, config):
         super(BigGAN, self).__init__()
