@@ -42,6 +42,9 @@ from big_sleep.resample import resample
 from big_sleep.biggan import BigGAN
 from big_sleep.clip import load, tokenize
 from big_sleep.device import DEVICE
+from big_sleep.normalization import normalize_clip_image
+from big_sleep import mps_cutouts
+from big_sleep.reference_math import REFERENCE_MATH
 
 # graceful keyboard interrupt
 
@@ -130,8 +133,8 @@ def create_clip_img_transform(image_width):
     return transform
 
 
-def rand_cutout(image, size, center_bias=False, center_focus=2):
-    width = image.shape[-1]
+def rand_cutout_offsets(width, size, center_bias=False, center_focus=2):
+    """(row, col) offset of a size x size crop in a width x width image, from Python's `random`."""
     min_offset = 0
     max_offset = width - size
     if center_bias:
@@ -146,6 +149,15 @@ def rand_cutout(image, size, center_bias=False, center_focus=2):
     else:
         offset_x = random.randint(min_offset, max_offset)
         offset_y = random.randint(min_offset, max_offset)
+    return offset_x, offset_y
+
+def rand_cutout_size(width):
+    """Random crop side length, 50-95 % of the image, from torch's RNG."""
+    return int(width * torch.zeros(1,).normal_(mean=.8, std=.3).clip(.5, .95))
+
+def rand_cutout(image, size, center_bias=False, center_focus=2):
+    width = image.shape[-1]
+    offset_x, offset_y = rand_cutout_offsets(width, size, center_bias, center_focus)
     cutout = image[:, :, offset_x:offset_x + size, offset_y:offset_y + size]
     return cutout
 
@@ -223,7 +235,8 @@ class BigSleep(nn.Module):
         experimental_resample = False,
         ema_decay = 0.99,
         center_bias = False,
-        larger_clip = False
+        larger_clip = False,
+        metal_cutouts = None
     ):
         super().__init__()
         self.loss_coef = loss_coef
@@ -234,8 +247,22 @@ class BigSleep(nn.Module):
 
         self.interpolation_settings = {'mode': 'bilinear', 'align_corners': False} if bilinear else {'mode': 'nearest'}
 
+        # Opt-in Metal cutout kernel (MPS only; see big_sleep/mps_cutouts.py). Off under
+        # BIG_SLEEP_REFERENCE_MATH because it corrects torch's nearest-resize gradients
+        # and therefore changes the trajectory for a seed.
+        if metal_cutouts is None:
+            metal_cutouts = mps_cutouts.METAL_CUTOUTS_DEFAULT
+        self.metal_cutouts = bool(metal_cutouts) and not REFERENCE_MATH
+        if self.metal_cutouts:
+            if bilinear or experimental_resample:
+                raise ValueError("metal_cutouts implements nearest resizing only; drop --bilinear / --experimental_resample")
+            if DEVICE.type != 'mps' or not mps_cutouts.available():
+                print("metal_cutouts needs MPS with torch.mps.compile_shader; using PyTorch cutouts")
+                self.metal_cutouts = False
+
         model_name = 'ViT-B/32' if not larger_clip else 'ViT-L/14'
-        self.perceptor, self.normalize_image = load(model_name, device=DEVICE, jit=False)
+        self.perceptor, _ = load(model_name, device=DEVICE, jit=False)
+        self.normalize_image = normalize_clip_image
 
         self.model = Model(
             image_size = image_size,
@@ -267,19 +294,25 @@ class BigSleep(nn.Module):
         if not return_loss:
             return out
 
-        pieces = []
-        for ch in range(num_cutouts):
-            # sample cutout size
-            size = int(width * torch.zeros(1,).normal_(mean=.8, std=.3).clip(.5, .95))
-            # get cutout
-            apper = rand_cutout(out, size, center_bias=self.center_bias)
-            if (self.experimental_resample):
-                apper = resample(apper, (224, 224))
-            else:
-                apper = F.interpolate(apper, (224, 224), **self.interpolation_settings)
-            pieces.append(apper)
-
-        into = torch.cat(pieces)
+        if self.metal_cutouts:
+            # Same random draws in the same order as the loop below, so the geometry of
+            # the cutouts is identical for a seed; only the resize arithmetic differs.
+            boxes = []
+            for ch in range(num_cutouts):
+                size = rand_cutout_size(width)
+                boxes.append((size, *rand_cutout_offsets(width, size, center_bias=self.center_bias)))
+            into = mps_cutouts.metal_cutouts(out, torch.tensor(boxes, dtype=torch.int32, device=out.device))
+        else:
+            pieces = []
+            for ch in range(num_cutouts):
+                size = rand_cutout_size(width)
+                apper = rand_cutout(out, size, center_bias=self.center_bias)
+                if (self.experimental_resample):
+                    apper = resample(apper, (224, 224))
+                else:
+                    apper = F.interpolate(apper, (224, 224), **self.interpolation_settings)
+                pieces.append(apper)
+            into = torch.cat(pieces)
         into = self.normalize_image(into)
 
         image_embed = self.perceptor.encode_image(into)
@@ -344,6 +377,7 @@ class Imagine(nn.Module):
         num_cutouts = 128,
         center_bias = False,
         larger_clip = False,
+        metal_cutouts = None,
         output_dir = None
     ):
         super().__init__()
@@ -374,7 +408,8 @@ class Imagine(nn.Module):
             ema_decay = ema_decay,
             num_cutouts = num_cutouts,
             center_bias = center_bias,
-            larger_clip = larger_clip
+            larger_clip = larger_clip,
+            metal_cutouts = metal_cutouts
         ).to(DEVICE)
 
         self.model = model

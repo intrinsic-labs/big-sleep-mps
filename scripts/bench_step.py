@@ -10,10 +10,14 @@ with the device synchronised around the timed region. Weights are downloaded
 on first run (~800 MB total for BigGAN-512 + CLIP ViT-B/32).
 """
 import argparse
+from pathlib import Path
 import sys
 import time
 
 import torch
+
+# Prefer this checkout over a sibling repository's editable installation.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 def main():

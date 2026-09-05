@@ -6,6 +6,28 @@ Suggested title:
 
 Labels to request: `module: mps`, `module: performance`.
 
+## Duplicate check (2026-09-05)
+
+`gh issue list -R pytorch/pytorch --state all --search "<q> mps"` for `convolution backward slow
+non-contiguous grad`, `mps_convolution_backward slow`, `conv2d backward slow`, `mps conv backward
+strides`, `mps convolution backward performance`. **No existing report of this slow path.**
+Related but distinct:
+
+- [#174269](https://github.com/pytorch/pytorch/issues/174269) (closed, 2026-02) —
+  `mps_convolution_backward_input` picks `grad_input`'s memory format from `grad_output`
+  rather than the input. Same function, same theme (the MPS conv backward is sensitive to
+  `grad_output`'s layout), but a correctness-of-format bug, not this 200× slowdown; worth
+  cross-referencing when filing.
+- [#192551](https://github.com/pytorch/pytorch/issues/192551) (closed) — compiled training 4×
+  slower on MPS because inductor forces channels_last: another layout-sensitivity report.
+- Companion draft `02-mps-patch-embed-conv2d-vs-matmul.md`: once this grad is made contiguous
+  the same conv is *still* ~80× slower than the equivalent matmul; the two are best filed as two
+  issues that reference each other.
+
+Addendum since the draft was written: with the `.contiguous()` workaround in place, the conv's
+"fast" path is itself ~80× slower than the equivalent reshape + matmul (488 vs 6.3 ms fwd+bwd at
+batch 96, fp16) — see the companion draft. The workaround is a stopgap, not the fix.
+
 ---
 
 ## 🐛 Describe the bug
