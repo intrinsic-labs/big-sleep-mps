@@ -383,7 +383,7 @@ class SelfAttn(nn.Module):
 _REFERENCE = os.environ.get('BIG_SLEEP_REFERENCE_MATH', '') not in ('', '0')
 FUSED_CONDITIONAL_BN = not _REFERENCE
 SLICE_CONV_TO_RGB = not _REFERENCE
-BAKE_SPECTRAL_NORM = not _REFERENCE  # forward-bit-identical, but see perf notes: the backward is not
+BAKE_SPECTRAL_NORM = True  # bit-identical when baked on the compute device (from_pretrained does), so always on
 
 
 class BigGANBatchNorm(nn.Module):
@@ -582,7 +582,10 @@ class BigGAN(nn.Module):
         state_dict = torch.load(resolved_model_file, map_location=DEVICE)
         model.load_state_dict(state_dict, strict=False)
         if freeze:
-            model.freeze_for_inference()
+            # Bake on the compute device: spectral norm's weight_orig / sigma rounds
+            # differently on CPU and MPS, and the live parametrisation computes it on
+            # the device every forward. Baking there keeps the weights bit-identical.
+            model.to(DEVICE).freeze_for_inference()
         return model
 
     @torch.no_grad()
