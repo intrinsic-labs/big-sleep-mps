@@ -42,6 +42,11 @@ from big_sleep.resample import resample
 from big_sleep.biggan import BigGAN
 from big_sleep.clip import load, tokenize
 from big_sleep.device import DEVICE
+<<<<<<< HEAD
+=======
+from big_sleep.regularizers import latent_loss
+from big_sleep.normalization import normalize_clip_image
+>>>>>>> 81e4c27 (Cache fixed CLIP normalization tensors and remove its scalar sync)
 
 # graceful keyboard interrupt
 
@@ -235,7 +240,8 @@ class BigSleep(nn.Module):
         self.interpolation_settings = {'mode': 'bilinear', 'align_corners': False} if bilinear else {'mode': 'nearest'}
 
         model_name = 'ViT-B/32' if not larger_clip else 'ViT-L/14'
-        self.perceptor, self.normalize_image = load(model_name, device=DEVICE, jit=False)
+        self.perceptor, _ = load(model_name, device=DEVICE, jit=False)
+        self.normalize_image = normalize_clip_image
 
         self.model = Model(
             image_size = image_size,
