@@ -3,8 +3,6 @@ import os.path
 import sys
 import subprocess
 import signal
-import string
-import re
 
 from datetime import datetime
 from pathlib import Path
@@ -43,32 +41,7 @@ from big_sleep.ema import EMA
 from big_sleep.resample import resample
 from big_sleep.biggan import BigGAN
 from big_sleep.clip import load, tokenize
-
-# Check if we're running on Apple Silicon
-import platform
-is_apple_silicon = platform.processor() == 'arm' and platform.system() == 'Darwin'
-
-# Use MPS (Metal Performance Shaders) if on Apple Silicon, otherwise require CUDA
-if is_apple_silicon:
-    if torch.backends.mps.is_available():
-        try:
-            # Create a small tensor to test if MPS is working properly
-            test_tensor = torch.zeros(1, device='mps')
-            # If we got here, MPS seems to be working
-            DEVICE = torch.device('mps')
-            print('✅ MPS is functioning properly')
-        except Exception as e:
-            print(f'⚠️ MPS is available but encountered an error: {str(e)}')
-            print('⚠️ Falling back to CPU')
-            DEVICE = torch.device('cpu')
-    else:
-        print('⚠️ MPS is not available on this Apple Silicon device')
-        DEVICE = torch.device('cpu')
-elif torch.cuda.is_available():
-    DEVICE = torch.device('cuda')
-else:
-    DEVICE = torch.device('cpu')
-    print('WARNING: Running on CPU, which will be very slow. Consider using a GPU.')
+from big_sleep.device import DEVICE
 
 # graceful keyboard interrupt
 
@@ -271,6 +244,12 @@ class BigSleep(nn.Module):
             ema_decay = ema_decay
         )
 
+        # Only the latents are optimised. Without this, every backward also
+        # computes (and accumulates forever) weight grads for ~200M frozen
+        # parameters: ~31% of a step on MPS and ~1 GB of grad buffers.
+        self.perceptor.requires_grad_(False)
+        self.model.biggan.requires_grad_(False)
+
     def reset(self):
         self.model.init_latents()
 
@@ -370,8 +349,8 @@ class Imagine(nn.Module):
         super().__init__()
 
         if torch_deterministic:
-            assert not bilinear, 'the deterministic (seeded) operation does not work with interpolation (PyTorch 1.7.1)'
-            torch.set_deterministic(True)
+            assert not bilinear, 'the deterministic (seeded) operation does not work with interpolation'
+            torch.use_deterministic_algorithms(True)
 
         self.seed = seed
         self.append_seed = append_seed
@@ -381,6 +360,7 @@ class Imagine(nn.Module):
             if seed == 0:
                 print('you can override this with --seed argument in the command line, or --random for a randomly chosen one')
             torch.manual_seed(seed)
+            random.seed(seed)  # rand_cutout offsets come from Python's random
 
         self.epochs = epochs
         self.iterations = iterations
@@ -514,9 +494,10 @@ class Imagine(nn.Module):
         if (i + 1) % self.save_every == 0:
             with torch.no_grad():
                 self.model.model.latents.eval()
+                # EMA latents (eval mode) -> the image we save; `out` is already it
                 out, losses = self.model(self.encoded_texts["max"], self.encoded_texts["min"])
-                top_score, best = torch.topk(losses[2], k=1, largest=False)
-                image = self.model.model()[best].cpu()
+                top_score = losses[2]
+                image = out.cpu()
                 self.model.model.latents.train()
 
                 # Get absolute path for clarity
@@ -538,7 +519,7 @@ class Imagine(nn.Module):
                 try:
                     save_image(image, str(self.filename))
                     if DEBUG:
-                        print(f"DEBUG: Successfully saved image")
+                        print("DEBUG: Successfully saved image")
                 except Exception as e:
                     print(f"ERROR: Failed to save image: {str(e)}")
                     if DEBUG:
@@ -594,7 +575,7 @@ class Imagine(nn.Module):
         
         with torch.no_grad():
             print("Warming up model...")
-            self.model(self.encoded_texts["max"][0]) # one warmup step due to issue with CLIP and CUDA
+            self.model(self.encoded_texts["max"][:1])  # one warmup step due to issue with CLIP and CUDA
 
         if self.open_folder:
             open_folder('./')
