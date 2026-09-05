@@ -1,6 +1,35 @@
+# Draft — PyTorch issue (not yet filed)
+
+Suggested title:
+
+> [MPS] `F.interpolate(mode="nearest")` backward sends gradient to the wrong source pixels for some sizes (e.g. 104→224, 468→224); forward is correct
+
+Labels to request: `module: mps`, `module: correctness (silent)`, `module: autograd`.
+
+## Duplicate check (2026-09-05)
+
+`gh issue list -R pytorch/pytorch --state all --search "<q> mps"` for `interpolate nearest
+backward wrong gradient`, `upsample_nearest2d backward incorrect`, `nearest backward gradient`,
+`upsample nearest backward`, `interpolate gradient`, `F.interpolate grad`, `upsample_nearest2d_backward`,
+`MPSGraph resize gradient`, `resizeNearestWithGradientTensor`. **No existing MPS report.**
+Related but distinct:
+
+- [#97135](https://github.com/pytorch/pytorch/issues/97135) (open, 2023) — "Incorrect gradient
+  calculation for upsample nearest on **CUDA**": the same *symptom* on a different backend and
+  a different kernel. Worth citing as precedent; the MPS backward is a separate implementation
+  (MPSGraph `resizeNearestWithGradientTensor`), so this is a new issue rather than a duplicate.
+- [#89277](https://github.com/pytorch/pytorch/issues/89277) (closed) — `upsample_nearest1d`
+  not implemented on MPS: coverage, not correctness.
+
+The reproducer below needs no models, weights or randomness, and the oracle is the forward's
+own output (source indices encoded as pixel values, `bincount` of what the forward actually
+produced) — so it does not depend on trusting any other backend's backward.
+
+---
+
 # MPS nearest-resize backward sends gradients to different source pixels
 
-Found during the Astra performance pass, 2026-09-05. **Not filed upstream.**
+Found by GPT-6 Astra during the big-sleep-mps performance pass, 2026-09-05. **Not filed upstream.**
 
 On an M1 Max, macOS 26.5.2 (25F84), torch 2.14.0, some `F.interpolate`
 `mode="nearest"` shapes have identical CPU/MPS forward results but substantially
@@ -59,16 +88,16 @@ confirmed internal MPSGraph root cause**. The reproduction establishes the
 forward/backward disagreement independently of that hypothesis. A backend fix
 should pass the source-index/count oracle for all supported resize dimensions.
 
-## Why the performance experiment is not enabled
+## Why the corrected kernel is opt-in in big-sleep-mps
 
-`scripts/cutout_metal.py` and its sibling Metal source implement batched nearest
-sampling and scatter the gradient back to the exact forward source pixel.
+`big_sleep/mps_cutouts.py` (a Metal kernel via `torch.mps.compile_shader`) implements batched
+nearest sampling and scatters the gradient back to the exact forward source pixel.
 `scripts/bench_cutouts.py` checks this against CPU autograd and measures both
 fixed geometry and resampled geometry, including metadata construction/copies.
 
 Correcting these gradients changes Big Sleep's optimization trajectory for the
 same seed. The experiment also uses atomic fp32 accumulation, whose addition
 order can vary, and supports only first derivatives of contiguous, single-image
-fp32 RGB inputs. It is deliberately **not imported by the application**.
-Neither the bug fix nor a new cutout backend is silently introduced as a
-performance-only change.
+fp32 RGB inputs. It is deliberately **off by default** (`BIG_SLEEP_METAL_CUTOUTS=1` /
+`--metal_cutouts` turns it on): neither the bug fix nor a new cutout backend is silently
+introduced as a performance-only change. See `docs/performance.md`.

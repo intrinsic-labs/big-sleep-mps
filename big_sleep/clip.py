@@ -426,7 +426,7 @@ class VisualTransformer(nn.Module):
         exactly one matmul over non-overlapping patches. On MPS the Conv2d
         kernel is pathological for this shape: 32x32/stride-32 at batch 96 costs
         ~490 ms fwd+bwd (and ~130 s with the permuted-with-offset grad that the
-        torch.cat below produces, see docs/pytorch-issue-draft.md); the matmul
+        torch.cat below produces, see docs/pytorch-issues/); the matmul
         form costs ~6 ms and is the same numbers to within one fp16 ulp.
         CUDA/CPU keep the conv so their numerics match upstream bit for bit.
         """
@@ -445,7 +445,7 @@ class VisualTransformer(nn.Module):
                 # The torch.cat below hands conv1's backward a narrow() of the
                 # incoming grad: a permuted view with a storage offset, on which
                 # mps_convolution_backward is ~200x slower (11 s vs 56 ms at batch 8,
-                # torch 2.14). Numerically a no-op. See docs/pytorch-issue-draft.md.
+                # torch 2.14). Numerically a no-op. See docs/pytorch-issues/01-mps-conv-backward-strided-grad-output.md.
                 x.register_hook(lambda g: g.contiguous())
             x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
             x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]

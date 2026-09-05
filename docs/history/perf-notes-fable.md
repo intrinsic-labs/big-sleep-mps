@@ -1,7 +1,15 @@
 ---
-status: live
+status: historical
 verified: 2026-09-05 @fable
 ---
+
+> **Historical.** Fable 5.1's notes from the 2026-09-05 performance pass, as written on branch
+> `perf/fable`, kept verbatim except for path fixes. The consolidated, current account is
+> [`docs/performance.md`](../performance.md); the PyTorch issue drafts referenced here now live
+> under [`docs/pytorch-issues/`](../pytorch-issues/). The `samples/perf_fable_fast_…` image referenced in §4
+> was rendered before the branch's last commit; it is replaced by `samples/perf_fast_a_pyramid_made_of_ice.png`,
+> rendered from the consolidated tree, which is bit-identical to this branch's final HEAD.
+
 
 # big-sleep-mps performance pass — Fable's notes (branch `perf/fable`)
 
@@ -11,7 +19,7 @@ from one of the microbenchmarks under `scripts/`, run under the shared GPU lock 
 else was on the GPU. Base is `fix/mps-contiguous-grad` (1,002 / 721 / 121 ms at 512/96,
 512/64, 128/8 — Astra's `--n 20` baseline, cited rather than re-measured). Lane split with
 GPT-6 Astra: I took CLIP fwd/bwd and BigGAN; Astra took cutouts, losses, optimiser/EMA,
-syncs and pipeline structure (`docs/perf-notes-astra.md`).
+syncs and pipeline structure (`docs/history/perf-notes-astra.md`).
 
 ## Headline
 
@@ -64,7 +72,7 @@ patch-embedding conv: `scripts/patch_embed_bench.py 96`:
 
 Max abs difference conv vs matmul: 1e-3 in fp16 (one ulp at magnitude ~1), 8e-6 in fp32.
 That single op was ~47 % of the step. (It is the same conv whose *permuted-with-offset*
-grad layout costs 130 s — `docs/pytorch-issue-draft.md`; the issue draft should gain a line
+grad layout costs 130 s — `docs/pytorch-issues/01-mps-conv-backward-strided-grad-output.md`; the issue draft should gain a line
 saying the fast path is still ~80× slower than the equivalent matmul.)
 
 ## 2. What changed, ranked by effect (512/96 step, cumulative)

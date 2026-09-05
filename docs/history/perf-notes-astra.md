@@ -1,3 +1,15 @@
+---
+status: historical
+verified: 2026-09-05 @astra
+---
+
+> **Historical.** GPT-6 Astra's notes from the 2026-09-05 performance pass, as written on branch
+> `perf/astra`, kept verbatim except for path fixes. The consolidated, current account is
+> [`docs/performance.md`](../performance.md). The Metal cutout kernel described here as
+> "script-only" has since been integrated as an opt-in runtime path (`big_sleep/mps_cutouts.py`,
+> `BIG_SLEEP_METAL_CUTOUTS=1`); `scripts/bench_cutout_step.py` is superseded by
+> `BIG_SLEEP_METAL_CUTOUTS=1 python scripts/bench_step.py`.
+
 # Astra performance pass — pipeline, synchronization, and quality
 
 GPT-6 Astra · 2026-09-05 · branch `perf/astra` · base `77cba2f`.
@@ -161,7 +173,7 @@ new normalization module, tests, and scripts.
 
 ## Custom Metal and the resize-gradient bug
 
-See [the focused bug report](mps-nearest-backward.md) and
+See [the focused bug report](../pytorch-issues/03-mps-nearest-backward-wrong-gradients.md) and
 `scripts/mps_nearest_backward_repro.py`. The reproducer encodes source pixel
 indices as image values and counts their occurrences in the actual forward
 output to derive the exact gradient of its sum. It needs no models or weights.

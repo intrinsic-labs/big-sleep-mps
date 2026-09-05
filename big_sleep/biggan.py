@@ -379,7 +379,7 @@ class SelfAttn(nn.Module):
 
 # A/B switches for tests/benchmarks (reference forms when False). BIG_SLEEP_REFERENCE_MATH=1
 # flips every rounding-changing optimisation in the fork back to the upstream form, which
-# reproduces pre-optimisation runs bit for bit (see docs/perf-notes-fable.md on why any
+# reproduces pre-optimisation runs bit for bit (see docs/performance.md on why any
 # change of rounding gives a different image for the same seed).
 _REFERENCE = REFERENCE_MATH
 FUSED_CONDITIONAL_BN = not _REFERENCE
