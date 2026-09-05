@@ -402,17 +402,30 @@ class VisualTransformer(nn.Module):
         self.ln_post = LayerNorm(width)
         self.proj = nn.Parameter(scale * torch.randn(width, output_dim))
 
+    def patch_embed(self, x: torch.Tensor) -> torch.Tensor:
+        """conv1 applied as patchify (reshape) + matmul -> [*, grid ** 2, width].
+
+        The patch embedding is a conv whose kernel equals its stride, so it is
+        exactly one matmul over non-overlapping patches. On MPS the Conv2d
+        kernel is pathological for this shape: 32x32/stride-32 at batch 96 costs
+        ~490 ms fwd+bwd (and ~130 s with the permuted-with-offset grad that the
+        torch.cat below produces, see docs/pytorch-issue-draft.md); the matmul
+        form costs ~6 ms and is the same numbers to within one fp16 ulp.
+        CUDA/CPU keep the conv so their numerics match upstream bit for bit.
+        """
+        n, c, h, w = x.shape
+        p = self.conv1.kernel_size[0]
+        gh, gw = h // p, w // p
+        patches = x.reshape(n, c, gh, p, gw, p).permute(0, 2, 4, 1, 3, 5).reshape(n, gh * gw, c * p * p)
+        return patches @ self.conv1.weight.reshape(self.conv1.out_channels, -1).t()
+
     def forward(self, x: torch.Tensor):
-        x = self.conv1(x)  # shape = [*, width, grid, grid]
-        if x.requires_grad and x.device.type == 'mps':
-            # The torch.cat below hands conv1's backward a narrow() of the
-            # incoming grad: a permuted view with a storage offset. On that one
-            # layout mps_convolution_backward is ~200x slower (11 s vs 56 ms at
-            # batch 8, torch 2.14). Making the grad contiguous is numerically a
-            # no-op; CUDA/CPU never take this branch. See docs/pytorch-issue-draft.md.
-            x.register_hook(lambda g: g.contiguous())
-        x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
-        x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
+        if x.device.type == 'mps' and self.conv1.kernel_size == self.conv1.stride and self.conv1.bias is None:
+            x = self.patch_embed(x)  # shape = [*, grid ** 2, width]
+        else:
+            x = self.conv1(x)  # shape = [*, width, grid, grid]
+            x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
+            x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
         x = torch.cat([self.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x], dim=1)  # shape = [*, grid ** 2 + 1, width]
         x = x + self.positional_embedding.to(x.dtype)
         x = self.ln_pre(x)
