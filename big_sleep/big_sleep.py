@@ -42,6 +42,7 @@ from big_sleep.resample import resample
 from big_sleep.biggan import BigGAN
 from big_sleep.clip import load, tokenize
 from big_sleep.device import DEVICE
+from big_sleep.regularizers import latent_loss
 
 # graceful keyboard interrupt
 
@@ -285,24 +286,8 @@ class BigSleep(nn.Module):
         image_embed = self.perceptor.encode_image(into)
 
         latents, soft_one_hot_classes = self.model.latents()
-        num_latents = latents.shape[0]
         latent_thres = self.model.latents.model.thresh_lat
-
-        lat_loss =  torch.abs(1 - torch.std(latents, dim=1)).mean() + \
-                    torch.abs(torch.mean(latents, dim = 1)).mean() + \
-                    4 * torch.max(torch.square(latents).mean(), latent_thres)
-
-
-        for array in latents:
-            mean = torch.mean(array)
-            diffs = array - mean
-            var = torch.mean(torch.pow(diffs, 2.0))
-            std = torch.pow(var, 0.5)
-            zscores = diffs / std
-            skews = torch.mean(torch.pow(zscores, 3.0))
-            kurtoses = torch.mean(torch.pow(zscores, 4.0)) - 3.0
-
-            lat_loss = lat_loss + torch.abs(kurtoses) / num_latents + torch.abs(skews) / num_latents
+        lat_loss = latent_loss(latents, latent_thres)
 
         cls_loss = ((50 * torch.topk(soft_one_hot_classes, largest = False, dim = 1, k = 999)[0]) ** 2).mean()
 
@@ -589,4 +574,3 @@ class Imagine(nn.Module):
             for i in (it for it in pbar if not terminate):
                 out, loss = self.train_step(epoch, i, image_pbar)
                 pbar.set_description(f'loss: {loss.item():04.2f}')
-
